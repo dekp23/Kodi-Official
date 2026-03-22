@@ -123,14 +123,15 @@ class Main(object):
         cache.cache_clear()
         xbmcgui.Dialog().notification(_plugin, _language(30201), _icon, 3000, False)
 
-    def get_search_items(self, filter_map, target, page):
+    def get_search_items(self, content_type, search_text, page):
+        if DEBUG:
+            self.log('search_items({0}, {1}, {2})'.format(content_type, search_text, page))
         cd = {}
+        target = 'title:({0}) AND mediatype:({1})'.format(search_text, 'movies' if content_type == 'video' else 'audio')
         params = {
-            'service_backend': 'metadata',
             'user_query': target,
             'hits_per_page': 100,
             'page': page,
-            'filter_map': filter_map,
             'aggregations': 'false',
             'client_url': 'https://archive.org/'
         }
@@ -292,25 +293,27 @@ class Main(object):
         keyboard.setHeading(_language(30102))
         keyboard.doModal()
         if keyboard.isConfirmed():
-            search_text = urllib.parse.quote(keyboard.getText())
+            search_text = keyboard.getText()
         else:
             search_text = ''
-        xbmcplugin.endOfDirectory(_handle, cacheToDisc=False)
+        xbmcplugin.endOfDirectory(_handle, updateListing=True, cacheToDisc=False)
+        xbmc.sleep(200)
         if len(search_text) > 2:
-            url = _pluginURL + '?' + urllib.parse.urlencode({'action': 'search_word',
+            url = _pluginURL + '?' + urllib.parse.urlencode({
+                'action': 'search_word',
                 'keyword': search_text,
                 'content_type': content_type,
-                'page': 1})
+                'page': 1
+            })
+            xbmc.sleep(200)
             xbmc.executebuiltin('Container.Update({0}, replace)'.format(url))
         else:
             xbmcgui.Dialog().notification(_plugin, _language(30202), _icon, 3000, False)
-            xbmc.executebuiltin('Container.Update({0}, replace)'.format(_pluginURL))
 
     def search_word(self, search_text, page, content_type):
         if DEBUG:
             self.log('search_word("{0}, page {1}, {2}")'.format(search_text, page, content_type))
-        filter_map = '{{"mediatype":{{"{}":"inc","etree":"inc"}}}}'.format('movies' if content_type == 'video' else 'audio')
-        data = cache.get(self.get_search_items, cache_duration, filter_map, search_text, page)
+        data = cache.get(self.get_search_items, cache_duration, content_type, search_text, page)
         if data:
             items = data.get('hits')
             for item in items:
@@ -363,14 +366,14 @@ class Main(object):
             xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_UNSORTED)
             xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_VIDEO_TITLE)
             # End of directory...
-            xbmcplugin.endOfDirectory(_handle, cacheToDisc=True)
+            xbmcplugin.endOfDirectory(_handle, cacheToDisc=False)
 
     def play(self, item_id, content_type):
         if DEBUG:
             self.log('play("{}") {}'.format(item_id, content_type))
 
         # Use the metadata API directly instead of scraping HTML
-        # The old js-play8-playlist HTML scraping no longer works on archive.org
+        # HTML scraping is fragile - archive.org changes their player periodically
         metadata_url = self.base_url + 'metadata/' + item_id
         jd = client.request(metadata_url, headers=self.headers)
 
